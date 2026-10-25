@@ -1,0 +1,76 @@
+[build-system]
+requires = ["setuptools>=68", "setuptools-scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "config-ledger"
+version = "0.1.0"
+description = "Content-addressed, versioned run identity for experiment configs on shared filesystems and Slurm clusters, with no database."
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Alex Shen" }]
+requires-python = ">=3.10"
+keywords = ["experiment-management", "hydra", "slurm", "reproducibility", "content-addressed", "nfs"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering",
+]
+dependencies = [
+    "xxhash>=3.0",
+]
+
+[project.optional-dependencies]
+# Read OmegaConf `DictConfig` trees (lazily resolved) without requiring Hydra.
+omegaconf = ["omegaconf>=2.3"]
+# Pydantic v2 config models (VersionedConfig mixed into BaseModel).
+pydantic = ["pydantic>=2.10"]
+# Sweep manifests + the submit-only Slurm launcher (Hydra plugin).
+hydra = [
+    "config-ledger[omegaconf]",
+    "hydra-core>=1.3",
+    "hydra-submitit-launcher>=1.2",
+    "submitit>=1.5",
+    "pandas>=2.0",
+]
+# The toy example under examples/toy_mlp.
+example = ["config-ledger[hydra]", "numpy>=1.24"]
+dev = ["config-ledger[hydra,example,pydantic]", "pytest>=8", "ruff>=0.5", "pyright>=1.1"]
+
+[project.scripts]
+config-ledger = "config_ledger.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Alex-Shen-CMU/config-ledger"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+# `hydra_plugins.*` is a PEP 420 namespace package that Hydra scans for launchers; it must
+# be installed at top level alongside `config_ledger`, hence two roots.
+include = ["config_ledger*", "hydra_plugins*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra -m 'not e2e and not slurm'"
+markers = [
+    "e2e: runs the toy example through the real launcher (slow)",
+    "slurm: submits real jobs; needs a Slurm cluster and CONFIG_LEDGER_SLURM_DIR (see README)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pyright]
+include = ["src"]
+pythonVersion = "3.10"
+typeCheckingMode = "basic"

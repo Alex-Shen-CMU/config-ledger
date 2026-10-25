@@ -1,0 +1,22 @@
+defaults:
+  - work: base
+  - check: base
+  - sweep: null
+  - override hydra/launcher: config_ledger_slurm
+  - _self_
+
+# --- execution control: none of these keys affect run identity -------------------------
+outputs: ???
+ledger:
+  root: ${outputs}/ledger
+  namespace: stage2
+  sweep_group: sweep
+
+hydra:
+  sweep:
+    dir: ${outputs}/hydra/${hydra.job.name}/${now:%Y-%m-%d_%H-%M-%S}
+  launcher:
+    submitit_folder: ${hydra.sweep.dir}/.submitit/%j
+    timeout_min: 15
+    cpus_per_task: 1
+    mem_gb: 1

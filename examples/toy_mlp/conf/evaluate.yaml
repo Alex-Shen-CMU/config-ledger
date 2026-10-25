@@ -1,0 +1,7 @@
+defaults:
+  - train
+  - evaluation: base
+  - _self_
+
+ledger:
+  namespace: evaluate

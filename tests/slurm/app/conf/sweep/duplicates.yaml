@@ -1,0 +1,6 @@
+# @package hydra
+# Four grid points, one identity: sleep_s is an execution field.
+sweeper:
+  params:
+    work.value: 7
+    work.sleep_s: 1, 2, 3, 4

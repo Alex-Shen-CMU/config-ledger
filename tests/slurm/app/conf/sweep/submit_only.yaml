@@ -1,0 +1,6 @@
+# @package hydra
+# Four distinct identities; tasks sleep so the driver must return before any finishes.
+sweeper:
+  params:
+    work.value: 1, 2, 3, 4
+    work.sleep_s: 60

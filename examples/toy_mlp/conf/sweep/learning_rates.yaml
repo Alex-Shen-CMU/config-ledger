@@ -1,0 +1,8 @@
+# @package hydra
+# Overlaps hidden_sizes at (hidden=16, lr=0.05): those points are recognised as already
+# trained and skipped, which is the deduplication the ledger exists for.
+sweeper:
+  params:
+    model.hidden: 16
+    trainer.learning_rate: 0.01, 0.05, 0.1
+    trainer.seed: 0, 1

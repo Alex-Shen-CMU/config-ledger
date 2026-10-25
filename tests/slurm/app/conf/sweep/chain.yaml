@@ -1,0 +1,6 @@
+# @package hydra
+# Stage 1 sleeps; stage 2 (same grid) must be held by --dependency until it is done.
+sweeper:
+  params:
+    work.value: 11, 12
+    work.sleep_s: 90

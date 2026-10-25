@@ -1,0 +1,5 @@
+# @package hydra
+sweeper:
+  params:
+    model.hidden: 8, 16, 32
+    trainer.seed: 0, 1

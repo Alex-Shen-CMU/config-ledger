@@ -1,0 +1,28 @@
+defaults:
+  - data: base
+  - model: base
+  - trainer: base
+  - sweep: null
+  - override hydra/launcher: config_ledger_local
+  - _self_
+
+# --- execution control: none of these keys affect run identity -------------------------
+outputs: ${hydra:runtime.cwd}/outputs
+overwrite: false
+ledger:
+  root: ${hydra:runtime.cwd}/outputs/ledger
+  namespace: train
+  sweep_group: sweep
+  outputs: ${outputs}/${ledger.namespace}   # where this namespace's run folders go
+
+# Hydra's own logs. Relative (to the invocation directory): the `${hydra:...}` resolver is
+# not available yet when the launcher itself is instantiated.
+hydra:
+  run:
+    dir: outputs/hydra/${hydra.job.name}/${now:%Y-%m-%d_%H-%M-%S}
+  sweep:
+    dir: outputs/hydra/${hydra.job.name}/${now:%Y-%m-%d_%H-%M-%S}
+  launcher:
+    submitit_folder: ${hydra.sweep.dir}/.submitit/%j
+    timeout_min: 10
+    cpus_per_task: 1

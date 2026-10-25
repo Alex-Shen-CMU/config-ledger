@@ -1,0 +1,6 @@
+# @package hydra
+# One grid point raises; the others must still complete.
+sweeper:
+  params:
+    work.value: 21, 22, 23
+    work.fail_on_value: 22
