@@ -167,6 +167,12 @@ manifest yet (`ParentSweepManifestMissingError`), or if any of its grid points' 
 not in the parent's manifest (`ParentSweepMismatchError`, listing the points). That usually
 means the scoped config resolves a point differently from the parent.
 
+The manifest has a column per `hydra.sweeper.params` key. A sweep given on the command line
+(`python train.py -m data_generator.seed=0,1,2`) is not a sweeper param, so by default its
+manifest only records `folder_id`. Set `hydra.launcher.overrides_to_manifest=true` to give every
+job override its own column as well. That covers command-line sweeps, constants and config
+group choices.
+
 To ask which folder already owns a config, without allocating one, use `config-ledger lookup`.
 It prints the folder id, or the path with `--parent`. It exits 0 when a folder is found, 1 when
 none is, and 2 on errors:
@@ -207,7 +213,7 @@ numpy MLP that runs in about a minute with the local executor; `bash examples/to
 | **namespace** | The stage that owns the outputs (`train`, `evaluate`). The same config may own one folder per namespace. Always passed explicitly. |
 | **sidecar** | `<root>/<namespace>/<hash[:2]>/<hash>.json`, insert-only. Existence means "this identity owns this folder", not "the run finished". |
 | **run manifest** | `run_manifest.json` inside each output folder listing every hash that resolves to it, with the row and tree of each; `config-ledger rebuild` regenerates the ledger from these. |
-| **sweep manifest** | `<root>/sweeps/<namespace>/<sweep>/<timestamp>.csv`: every sweeper param plus `folder_id`, one row per grid point. |
+| **sweep manifest** | `<root>/sweeps/<namespace>/<sweep>/<timestamp>.csv`: every sweeper param (and, with `overrides_to_manifest`, every other job override) plus `folder_id`, one row per grid point. |
 | **version index** | `<root>/<namespace>/_versions/<_target_>/<version>/{fresh,stale,migrated}/<folder_id>.json`: every run under every `(class, version)` it uses. Status belongs to that one config of the run. |
 
 ## When a schema changes
