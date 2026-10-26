@@ -16,7 +16,8 @@ REPO = Path(__file__).resolve().parents[1]
 EXAMPLE = REPO / "examples" / "toy_mlp"
 pytestmark = pytest.mark.e2e
 # Absolute paths so the subprocesses work from a temp cwd whether or not the package is installed.
-_ENV = {**os.environ, "PYTHONPATH": os.pathsep.join([str(EXAMPLE), str(REPO / "src"), os.environ.get("PYTHONPATH", "")])}
+# EXAMPLE is deliberately absent: the launcher puts the script's directory on the tasks' path.
+_ENV = {**os.environ, "PYTHONPATH": os.pathsep.join([str(REPO / "src"), os.environ.get("PYTHONPATH", "")])}
 
 
 def _run(script, *args, cwd, outputs, check=True):
@@ -71,6 +72,15 @@ def test_manifest_only_then_scoped_parts(tmp_path):
     assert outside.returncode != 0
     assert "4 of 6 grid point(s) are not in parent sweep" in outside.stderr
     assert len(list((outputs / "train").iterdir())) == 2
+
+
+def test_tasks_import_sibling_modules_only_with_script_dir_on_path(tmp_path):
+    # train.py imports the sibling package toy_mlp, which is not on _ENV's PYTHONPATH.
+    one = ("-m", "model.hidden=8", "trainer.seed=0")
+    off = _run("train.py", *one, "hydra.launcher.script_dir_to_pythonpath=false",
+               cwd=tmp_path, outputs=tmp_path / "off", check=False)
+    assert off.returncode != 0 and "No module named 'toy_mlp'" in off.stderr
+    _run("train.py", *one, cwd=tmp_path, outputs=tmp_path / "on")
 
 
 def test_overrides_to_manifest_records_cli_sweeps(tmp_path):
