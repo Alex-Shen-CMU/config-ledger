@@ -12,6 +12,8 @@ examples/**/slurm_logs/
 examples/**/.ledger/
 
 CLAUDE.md
+.claude/settings*
+.mcp.json
 
 docs/devlog/
 proposal.md
