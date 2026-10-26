@@ -142,3 +142,46 @@ def test_ledger_settings_reads_parent_sweep(tmp_path):
     block = {"root": str(tmp_path), "namespace": "train"}
     assert ledger_settings({"ledger": block})["parent_sweep"] is None
     assert ledger_settings({"ledger": {**block, "parent_sweep": "full"}})["parent_sweep"] == "full"
+
+
+# A command-line sweep (`data.seed=0,1`) plus a constant and a group choice, on top of the
+# sweeper params; the CLI also overrides the sweeper param LR.
+CLI_GRID = [[f"{LR}=0.1", f"{SEED}=0", "data.seed=0", "trainer.epochs=5", "model=mlp"],
+            [f"{LR}=0.2", f"{SEED}=0", "data.seed=1", "trainer.epochs=5", "model=mlp"],
+            [f"{LR}=0.2", f"{SEED}=0", "data.seed=2", "+extra=x"]]
+
+
+def test_cli_overrides_are_not_recorded_by_default(ledger):
+    rows = sweeps.build_rows(ledger, "train", _driver_config(), CLI_GRID, _compose)
+    assert list(rows[0]) == [LR, SEED, "method.name", "folder_id"]
+
+
+def test_include_overrides_adds_a_column_per_cli_override(ledger):
+    rows = sweeps.build_rows(ledger, "train", _driver_config(), CLI_GRID, _compose,
+                             include_overrides=True)
+    assert list(rows[0]) == [LR, SEED, "method.name", "data.seed", "trainer.epochs", "model",
+                             "extra", "folder_id"]
+    assert [r["data.seed"] for r in rows] == ["0", "1", "2"]
+    assert [r[LR] for r in rows] == ["0.1", "0.2", "0.2"]
+    assert [r["trainer.epochs"] for r in rows] == ["5", "5", ""]
+    assert [r["extra"] for r in rows] == ["", "", "x"]
+
+
+def test_cli_sweep_columns_load_as_axes(ledger):
+    grid = [[f"{LR}=0.1", f"data.seed={s}"] for s in (0, 1, 2)]
+    # Distinct identities per data seed, so the grid has three folders.
+    compose = lambda o: make_config(seed=int(sweeps.overrides_to_dict(o)["data.seed"]))  # noqa: E731
+    sweeps.write_sweep_manifest(ledger, "train", _driver_config(), grid, compose,
+                                include_overrides=True)
+    table = sweeps.load_sweep(ledger, "train", "lr_sweep")
+    assert table.axes() == ["data.seed"]
+    assert len(set(table.grid(["data.seed"]).values())) == 3
+
+
+def test_load_mixes_manifests_with_and_without_override_columns(ledger):
+    sweeps.write_sweep_manifest(ledger, "train", _driver_config(), GRID, _compose)
+    sweeps.write_sweep_manifest(ledger, "train", _driver_config(), [GRID[0] + ["data.seed=3"]],
+                                _compose, include_overrides=True)
+    table = sweeps.load_sweep(ledger, "train", "lr_sweep")
+    assert sorted(table.df["data.seed"]) == ["", "", "3"]
+    assert "data.seed" in table.axes()

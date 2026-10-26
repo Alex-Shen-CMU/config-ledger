@@ -49,6 +49,10 @@ the modules it references) before any code of ours runs on the worker. So the dr
 otherwise). The driver's own environment is restored afterwards. Set
 ``script_dir_to_pythonpath: false`` to opt out. Nothing is added under ``python -P``.
 
+``overrides_to_manifest: true`` adds a manifest column for every job override that is not a
+``hydra.sweeper.params`` key (e.g. a command-line sweep ``data_generator.seed=0,1,2``, which
+otherwise records only ``folder_id``); see :mod:`config_ledger.hydra.sweeps`.
+
 The local launcher defaults to ``wait_for_completion: true`` so an off-cluster example can
 run a sweep and then aggregate it in the same script; the same config with
 ``hydra/launcher=config_ledger_slurm`` runs the real thing on a cluster.
@@ -56,7 +60,7 @@ run a sweep and then aggregate it in the same script; the same config with
 Status (2026-09-10): ported from an internal project's submit-only Slurm launcher and
 generalized to the local executor. 2026-10-17: sweep-wide stale-run check.
 2026-10-18: ``skip_finished``. 2026-10-18: ``manifest_only`` and
-``ledger.parent_sweep``. 2026-10-26: ``script_dir_to_pythonpath``.
+``ledger.parent_sweep``. 2026-10-26: ``overrides_to_manifest``, ``script_dir_to_pythonpath``.
 """
 
 from __future__ import annotations
@@ -97,7 +101,7 @@ log = logging.getLogger(__name__)
 
 ARRAY_JOB_ID_MARKER = "CONFIG_LEDGER_ARRAY_JOB_ID"
 _LAUNCHER_ONLY_KEYS = {"wait_for_completion", "skip_finished", "manifest_only",
-                       "script_dir_to_pythonpath"}
+                       "overrides_to_manifest", "script_dir_to_pythonpath"}
 
 
 @contextmanager
@@ -148,6 +152,7 @@ class _SubmitOnlyMixin(BaseSubmititLauncher):
         wait = bool(params.pop("wait_for_completion", False))
         skip_finished = bool(params.pop("skip_finished", False))
         manifest_only = bool(params.pop("manifest_only", False))
+        overrides_to_manifest = bool(params.pop("overrides_to_manifest", False))
         script_dir_to_pythonpath = bool(params.pop("script_dir_to_pythonpath", True))
 
         sweep_dir = Path(str(self.config.hydra.sweep.dir))
@@ -185,7 +190,7 @@ class _SubmitOnlyMixin(BaseSubmititLauncher):
         else:
             path = write_sweep_manifest(
                 ledger, namespace, self.config, job_overrides, compose,
-                sweep_group=settings["sweep_group"],
+                sweep_group=settings["sweep_group"], include_overrides=overrides_to_manifest,
             )
 
         # A grid point that is not submitted (every point under manifest_only, skipped points
@@ -260,6 +265,7 @@ class SlurmSubmitOnlyConf(SlurmQueueConf):
     wait_for_completion: bool = False
     skip_finished: bool = False
     manifest_only: bool = False
+    overrides_to_manifest: bool = False
     script_dir_to_pythonpath: bool = True
 
 
@@ -269,6 +275,7 @@ class LocalSubmitOnlyConf(LocalQueueConf):
     wait_for_completion: bool = True
     skip_finished: bool = False
     manifest_only: bool = False
+    overrides_to_manifest: bool = False
     script_dir_to_pythonpath: bool = True
 
 
