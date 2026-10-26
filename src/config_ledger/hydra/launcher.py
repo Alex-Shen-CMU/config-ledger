@@ -39,6 +39,16 @@ is then submitted with ``+ledger.parent_sweep=<parent>``, which writes no CSV of
 aborts unless every one of its folder ids is already in the parent's manifest
 (:func:`~config_ledger.hydra.sweeps.check_parent_sweep`). The two cannot be combined.
 
+Tasks see the script's directory on ``sys.path``, as under ``python script.py``, so a task
+script can import sibling modules. Submitit workers run ``python -m submitit.core._submit``,
+whose ``sys.path[0]`` is the job's cwd, and the pickled task function is unpickled (importing
+the modules it references) before any code of ours runs on the worker. So the driver's
+``sys.path[0]`` (the script's directory, or the cwd under ``python -m``) is prepended to
+``PYTHONPATH`` while the jobs are submitted. Both executors pass on the submitting environment
+(the local one spawns subprocesses, and ``sbatch`` exports it unless ``--export`` says
+otherwise). The driver's own environment is restored afterwards. Set
+``script_dir_to_pythonpath: false`` to opt out. Nothing is added under ``python -P``.
+
 The local launcher defaults to ``wait_for_completion: true`` so an off-cluster example can
 run a sweep and then aggregate it in the same script; the same config with
 ``hydra/launcher=config_ledger_slurm`` runs the real thing on a cluster.
@@ -46,15 +56,17 @@ run a sweep and then aggregate it in the same script; the same config with
 Status (2026-09-10): ported from an internal project's submit-only Slurm launcher and
 generalized to the local executor. 2026-10-17: sweep-wide stale-run check.
 2026-10-18: ``skip_finished``. 2026-10-18: ``manifest_only`` and
-``ledger.parent_sweep``.
+``ledger.parent_sweep``. 2026-10-26: ``script_dir_to_pythonpath``.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import sys
 import traceback
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -84,7 +96,27 @@ from config_ledger.versions import skip_version_check
 log = logging.getLogger(__name__)
 
 ARRAY_JOB_ID_MARKER = "CONFIG_LEDGER_ARRAY_JOB_ID"
-_LAUNCHER_ONLY_KEYS = {"wait_for_completion", "skip_finished", "manifest_only"}
+_LAUNCHER_ONLY_KEYS = {"wait_for_completion", "skip_finished", "manifest_only",
+                       "script_dir_to_pythonpath"}
+
+
+@contextmanager
+def script_dir_on_pythonpath() -> Iterator[None]:
+    """Prepend the driver's script directory (``sys.path[0]``) to ``PYTHONPATH`` for the
+    duration, so processes spawned meanwhile import from it as the driver does."""
+    if getattr(sys.flags, "safe_path", False) or not sys.path:
+        yield
+        return
+    script_dir = os.path.abspath(sys.path[0] or os.curdir)
+    old = os.environ.get("PYTHONPATH")
+    os.environ["PYTHONPATH"] = os.pathsep.join([script_dir, old]) if old else script_dir
+    try:
+        yield
+    finally:
+        if old is None:
+            os.environ.pop("PYTHONPATH", None)
+        else:
+            os.environ["PYTHONPATH"] = old
 
 
 class _SubmitOnlyMixin(BaseSubmititLauncher):
@@ -116,6 +148,7 @@ class _SubmitOnlyMixin(BaseSubmititLauncher):
         wait = bool(params.pop("wait_for_completion", False))
         skip_finished = bool(params.pop("skip_finished", False))
         manifest_only = bool(params.pop("manifest_only", False))
+        script_dir_to_pythonpath = bool(params.pop("script_dir_to_pythonpath", True))
 
         sweep_dir = Path(str(self.config.hydra.sweep.dir))
         sweep_dir.mkdir(parents=True, exist_ok=True)
@@ -194,7 +227,8 @@ class _SubmitOnlyMixin(BaseSubmititLauncher):
             k if k in baseparams else f"{self._EXECUTOR}_{k}": v
             for k, v in params.items() if k not in init_keys
         })
-        jobs = executor.map_array(self, *zip(*(job_params[i] for i in submitted), strict=True))
+        with script_dir_on_pythonpath() if script_dir_to_pythonpath else nullcontext():
+            jobs = executor.map_array(self, *zip(*(job_params[i] for i in submitted), strict=True))
         array_job_id = jobs[0].job_id.split("_")[0]
         print(f"{ARRAY_JOB_ID_MARKER}={array_job_id}", flush=True)
         if wait:
@@ -226,6 +260,7 @@ class SlurmSubmitOnlyConf(SlurmQueueConf):
     wait_for_completion: bool = False
     skip_finished: bool = False
     manifest_only: bool = False
+    script_dir_to_pythonpath: bool = True
 
 
 @dataclass
@@ -234,6 +269,7 @@ class LocalSubmitOnlyConf(LocalQueueConf):
     wait_for_completion: bool = True
     skip_finished: bool = False
     manifest_only: bool = False
+    script_dir_to_pythonpath: bool = True
 
 
 ConfigStore.instance().store(group="hydra/launcher", name="config_ledger_slurm", node=SlurmSubmitOnlyConf,

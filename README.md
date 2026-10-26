@@ -118,6 +118,10 @@ python train.py -m sweep=hidden_sizes          # writes outputs/ledger/sweeps/tr
 config-ledger versions --ledger outputs/ledger  # runs per (config class, version) and status
 ```
 
+As with `python train.py`, tasks can import modules that sit next to the script. The launcher
+prepends the script's directory to the tasks' `PYTHONPATH`, which submitit workers would
+otherwise lack. Set `hydra.launcher.script_dir_to_pythonpath=false` to turn this off.
+
 To launch only the grid points that still need running, declare the stage's completion rule
 once with a `RunStatus` and set `hydra.launcher.skip_finished=true`. The launcher asks the
 class registered for the namespace about every grid point whose folder exists, logs each skip

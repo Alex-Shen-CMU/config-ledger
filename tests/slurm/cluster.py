@@ -37,8 +37,11 @@ APP = Path(__file__).resolve().parent / "app"
 ARRAY_JOB_ID_RE = re.compile(r"^CONFIG_LEDGER_ARRAY_JOB_ID=(\d+)$", re.MULTILINE)
 
 
-def pythonpath() -> str:
-    return os.pathsep.join([str(APP), str(REPO / "src"), os.environ.get("PYTHONPATH", "")])
+def pythonpath(app: bool = True) -> str:
+    """``app=False`` for the launcher's drivers: the launcher puts the script's directory
+    (``APP``) on the tasks' path itself. Tasks submitted directly with submitit need it."""
+    return os.pathsep.join([*([str(APP)] if app else []), str(REPO / "src"),
+                            os.environ.get("PYTHONPATH", "")])
 
 
 @dataclass
@@ -72,7 +75,7 @@ class SlurmCluster:
             args.append(f"hydra.launcher.partition={self.partition}")
         start = time.monotonic()
         proc = subprocess.run([sys.executable, str(APP / script), "-m", *args], cwd=self.base,
-                              env={**os.environ, "PYTHONPATH": pythonpath()},
+                              env={**os.environ, "PYTHONPATH": pythonpath(app=False)},
                               capture_output=True, text=True, timeout=600)
         elapsed = time.monotonic() - start
         assert proc.returncode == 0, f"driver failed:\n{proc.stdout}\n{proc.stderr}"
