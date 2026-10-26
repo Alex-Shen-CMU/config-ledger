@@ -10,6 +10,7 @@ import pytest
 
 pytest.importorskip("hydra")
 pytest.importorskip("numpy")
+pd = pytest.importorskip("pandas")
 
 REPO = Path(__file__).resolve().parents[1]
 EXAMPLE = REPO / "examples" / "toy_mlp"
@@ -70,3 +71,16 @@ def test_manifest_only_then_scoped_parts(tmp_path):
     assert outside.returncode != 0
     assert "4 of 6 grid point(s) are not in parent sweep" in outside.stderr
     assert len(list((outputs / "train").iterdir())) == 2
+
+
+def test_overrides_to_manifest_records_cli_sweeps(tmp_path):
+    outputs = tmp_path / "outputs"
+    manifests = outputs / "ledger" / "sweeps" / "train" / "hidden_sizes"
+    _run("train.py", "-m", "sweep=hidden_sizes", "trainer.learning_rate=0.01,0.1",
+         "hydra.launcher.manifest_only=true", "hydra.launcher.overrides_to_manifest=true",
+         cwd=tmp_path, outputs=outputs)
+    (csv,) = manifests.glob("*.csv")
+    df = pd.read_csv(csv, dtype=str)
+    assert len(df) == 12
+    assert sorted(df["trainer.learning_rate"].unique()) == ["0.01", "0.1"]
+    assert set(df["trainer.epochs"]) == {"20"}, "constant CLI overrides are recorded too"

@@ -5,7 +5,11 @@ Every multirun writes one timestamped CSV::
     <ledger root>/sweeps/<namespace>/<sweep name>/<timestamp>.csv
 
 with a column per ``hydra.sweeper.params`` key (swept axes and constant singletons alike)
-plus the ``folder_id`` each grid point's results live under. Compiling a sweep's results
+plus the ``folder_id`` each grid point's results live under. With the launcher's
+``overrides_to_manifest`` option, every other override in the job overrides (command-line
+sweeps such as ``data_generator.seed=0,1,2``, constants and config group choices) gets a column
+too, after the sweeper params in first-seen order. Without it, a command-line sweep records
+only ``folder_id``. Compiling a sweep's results
 is then "read one CSV and look up folders", never "recompose every combo's config".
 
 The CSV is written by the *driver* at submission time, in one shot: it is the only process
@@ -32,6 +36,7 @@ Status (2026-09-10): generic half of an internal project's sweep manifest writer
 project-specific grid logic was deliberately not ported. 2026-10-17:
 :func:`check_sweep_versions`.
 2026-10-18: :func:`check_parent_sweep`; microsecond, exclusive-create CSV names.
+2026-10-26: ``include_overrides`` (launcher option ``overrides_to_manifest``).
 """
 
 from __future__ import annotations
@@ -88,24 +93,34 @@ def build_rows(
     config: Mapping[str, Any],
     job_overrides: Sequence[Sequence[str]],
     compose_job_config: Callable[[list[str]], Mapping[str, Any]],
+    include_overrides: bool = False,
 ) -> list[dict[str, str]]:
     """One row per grid point: sweeper param values plus the resolved folder id.
 
     ``compose_job_config(overrides)`` must return the config exactly as the task itself will
     see it, so the identity claimed here is the one the task will look up.
+
+    With ``include_overrides``, every override key in any job's overrides that is not a
+    sweeper param also gets a column, in first-seen order; a job without that key gets ``""``.
     """
     try:
         sweeper_params = dict(config["hydra"]["sweeper"]["params"] or {})
     except (KeyError, TypeError):
         sweeper_params = {}
     param_keys = [key.lstrip("+~") for key in sweeper_params]
+    applied_per_job = [overrides_to_dict(overrides) for overrides in job_overrides]
+    extra_keys = []
+    if include_overrides:
+        known = set(param_keys)
+        extra_keys = [key for key in dict.fromkeys(k for applied in applied_per_job for k in applied)
+                      if key not in known]
     rows = []
-    for overrides in job_overrides:
-        applied = overrides_to_dict(overrides)
+    for overrides, applied in zip(job_overrides, applied_per_job, strict=True):
         row = {
             key: applied.get(key, str(sweeper_params[raw]).strip())
             for raw, key in zip(sweeper_params, param_keys)
         }
+        row.update({key: applied.get(key, "") for key in extra_keys})
         job_config = compose_job_config(list(overrides))
         row[FOLDER_ID_COL] = ledger.get_or_create(namespace, ledger.identity(job_config)).folder_id
         rows.append(row)
@@ -220,14 +235,18 @@ def write_sweep_manifest(
     job_overrides: Sequence[Sequence[str]],
     compose_job_config: Callable[[list[str]], Mapping[str, Any]],
     sweep_group: str = "sweep",
+    include_overrides: bool = False,
 ) -> Path | None:
     """Write the sweep CSV and return its path, or None for an empty grid.
+
+    ``include_overrides`` is passed to :func:`build_rows`.
 
     Never raises: a sweep manifest is bookkeeping, and failing to write one must not take
     down an otherwise valid submission.
     """
     try:
-        rows = build_rows(ledger, namespace, config, job_overrides, compose_job_config)
+        rows = build_rows(ledger, namespace, config, job_overrides, compose_job_config,
+                          include_overrides=include_overrides)
         if not rows:
             return None
         directory = sweep_dir(ledger, namespace, sweep_name(config, sweep_group))
@@ -267,7 +286,10 @@ def load_sweep(ledger: Ledger, namespace: str, sweep: str,
             "launchers (config_ledger.hydra.launcher); a sweep run under another launcher has none."
         )
     frames = [pd.read_csv(p, dtype=str, keep_default_na=False) for p in paths]
-    df = pd.concat(frames, ignore_index=True).drop_duplicates().reset_index(drop=True)
+    # CSVs written with and without ``overrides_to_manifest`` have different columns; a cell
+    # missing from a CSV reads as "", like a job that lacked the override.
+    df = (pd.concat(frames, ignore_index=True).fillna("")
+          .drop_duplicates().reset_index(drop=True))
     return SweepTable(df)
 
 
